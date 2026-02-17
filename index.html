@@ -1,7 +1,255 @@
-<div id="GameWrapper" class="gameWrap" style="height: 300px;">
-                    
-                        <iframe id="GameFrame" data-age-rating="13" data-game-url="https://games.construct.net/66607/75835/embed.html?uid=0&amp;o=1" referrerpolicy="unsafe-url" allow="allow: accelerometer 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net; autoplay 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net; camera 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net; fullscreen 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net; gyroscope 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net; magnetometer 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net; microphone 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net; midi 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net; screen-wake-lock 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net; web-share 'self' https://www.construct.net https://construct-arcade.com https://games.construct.net;" sandbox="allow-same-origin allow-forms allow-scripts allow-pointer-lock allow-orientation-lock allow-popups" scrolling="no" data-game-width="854" data-game-height="480" src="https://games.construct.net/66607/75835/embed.html?uid=0&amp;o=1"></iframe>
-                        
-                        
-                    
-                </div>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Forest Stickman Movement</title>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:#87c9ff;
+}
+canvas{
+    display:block;
+}
+</style>
+</head>
+
+<body>
+<canvas id="game"></canvas>
+
+<script>
+"use strict";
+
+/* =============================
+   CANVAS SETUP
+============================= */
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+function resize(){
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resize);
+resize();
+
+/* =============================
+   INPUT
+============================= */
+
+const keys = {};
+window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+/* =============================
+   WORLD SETTINGS
+============================= */
+
+const world = {
+    gravity: 0.7,
+    groundY: () => canvas.height * 0.75
+};
+
+/* =============================
+   PLAYER (STICKMAN)
+============================= */
+
+const player = {
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    width: 40,
+    height: () => canvas.height * 0.6,
+
+    speed: 1.2,
+    maxSpeed: 12,
+    friction: 0.85,
+    jumpPower: 18,
+    onGround: false
+};
+
+/* =============================
+   CAMERA (SMOOTH FOLLOW)
+============================= */
+
+const camera = {
+    x: 0,
+    smooth: 0.08
+};
+
+/* =============================
+   TREES
+============================= */
+
+const trees = [];
+for(let i=0;i<200;i++){
+    trees.push({
+        x: i * 400 + Math.random()*200,
+        height: 120 + Math.random()*140
+    });
+}
+
+/* =============================
+   UPDATE
+============================= */
+
+function update(){
+
+    /* --- MOVEMENT INPUT --- */
+
+    if(keys["a"] || keys["arrowleft"]){
+        player.vx -= player.speed;
+    }
+    if(keys["d"] || keys["arrowright"]){
+        player.vx += player.speed;
+    }
+
+    if((keys["w"] || keys[" "] || keys["arrowup"]) && player.onGround){
+        player.vy = -player.jumpPower;
+        player.onGround = false;
+    }
+
+    /* --- LIMIT SPEED --- */
+    player.vx = Math.max(-player.maxSpeed, Math.min(player.maxSpeed, player.vx));
+
+    /* --- APPLY PHYSICS --- */
+    player.vx *= player.friction;
+    player.vy += world.gravity;
+
+    player.x += player.vx;
+    player.y += player.vy;
+
+    /* --- GROUND COLLISION --- */
+    const ground = world.groundY();
+    if(player.y + player.height() > ground){
+        player.y = ground - player.height();
+        player.vy = 0;
+        player.onGround = true;
+    }
+
+    /* --- CAMERA FOLLOW --- */
+    const targetCamX = player.x - canvas.width * 0.4;
+    camera.x += (targetCamX - camera.x) * camera.smooth;
+}
+
+/* =============================
+   DRAWING
+============================= */
+
+function drawSky(){
+    ctx.fillStyle = "#87c9ff";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function drawGround(){
+    const ground = world.groundY();
+    ctx.fillStyle = "#4caf50";
+    ctx.fillRect(0, ground, canvas.width, canvas.height-ground);
+
+    ctx.fillStyle = "#3e8e41";
+    for(let i=0;i<canvas.width;i+=40){
+        ctx.fillRect(i, ground, 20, 6);
+    }
+}
+
+function drawTrees(){
+    const ground = world.groundY();
+
+    trees.forEach(tree=>{
+        const screenX = tree.x - camera.x;
+
+        if(screenX < -200 || screenX > canvas.width + 200) return;
+
+        /* trunk */
+        ctx.fillStyle = "#6b3f1d";
+        ctx.fillRect(screenX, ground - tree.height, 30, tree.height);
+
+        /* leaves */
+        ctx.fillStyle = "#2e7d32";
+        ctx.beginPath();
+        ctx.arc(screenX+15, ground-tree.height, 60, 0, Math.PI*2);
+        ctx.fill();
+    });
+}
+
+function drawStickman(){
+    const screenX = player.x - camera.x;
+    const baseY = player.y;
+    const h = player.height();
+
+    const headRadius = h * 0.08;
+    const bodyLen = h * 0.28;
+    const legLen = h * 0.25;
+    const armLen = h * 0.22;
+
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+
+    const centerX = screenX + player.width/2;
+    const headY = baseY + headRadius*2;
+
+    /* head */
+    ctx.beginPath();
+    ctx.arc(centerX, headY, headRadius, 0, Math.PI*2);
+    ctx.stroke();
+
+    /* body */
+    const bodyTop = headY + headRadius;
+    const bodyBottom = bodyTop + bodyLen;
+
+    ctx.beginPath();
+    ctx.moveTo(centerX, bodyTop);
+    ctx.lineTo(centerX, bodyBottom);
+    ctx.stroke();
+
+    /* arms */
+    ctx.beginPath();
+    ctx.moveTo(centerX, bodyTop + 10);
+    ctx.lineTo(centerX - armLen, bodyTop + armLen*0.6);
+
+    ctx.moveTo(centerX, bodyTop + 10);
+    ctx.lineTo(centerX + armLen, bodyTop + armLen*0.6);
+    ctx.stroke();
+
+    /* legs */
+    ctx.beginPath();
+    ctx.moveTo(centerX, bodyBottom);
+    ctx.lineTo(centerX - armLen*0.7, bodyBottom + legLen);
+
+    ctx.moveTo(centerX, bodyBottom);
+    ctx.lineTo(centerX + armLen*0.7, bodyBottom + legLen);
+    ctx.stroke();
+}
+
+/* =============================
+   MAIN LOOP
+============================= */
+
+function loop(){
+    update();
+
+    drawSky();
+    drawTrees();
+    drawGround();
+    drawStickman();
+
+    requestAnimationFrame(loop);
+}
+
+/* =============================
+   START POSITIONS
+============================= */
+
+player.x = 0;
+player.y = world.groundY() - player.height();
+
+loop();
+
+</script>
+</body>
+</html>
