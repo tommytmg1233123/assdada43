@@ -1,183 +1,417 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Advanced Stickman World</title>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:#87c9ff;
+}
+canvas{
+    display:block;
+}
+</style>
+</head>
+
+<body>
+<canvas id="game"></canvas>
+
 <script>
 "use strict";
 
-/* =============================
-   CANVAS SETUP
-============================= */
+/* =====================================================
+CANVAS SETUP
+===================================================== */
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-function resize() {
+function resize(){
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 }
 window.addEventListener("resize", resize);
 resize();
 
-/* =============================
-   KEEP CANVAS FOCUSED
-============================= */
-canvas.setAttribute("tabindex", "0");
-canvas.focus();
+/* =====================================================
+VISIBILITY FIX (TAB SWITCH BLUE SCREEN FIX)
+===================================================== */
 
-/* =============================
-   PLAYER
-============================= */
+document.addEventListener("visibilitychange", ()=>{
+    if(!document.hidden){
+        lastTime = performance.now();
+    }
+});
+
+/* =====================================================
+STICKMAN IMAGE
+===================================================== */
+
+const stickImg = new Image();
+stickImg.src = "stickman.png";
+
+let imageReady = false;
+stickImg.onload = ()=> imageReady = true;
+
+/* =====================================================
+INPUT SYSTEM (WASD + SPACE)
+===================================================== */
+
+const keys = {};
+
+window.addEventListener("keydown", e=>{
+    keys[e.key.toLowerCase()] = true;
+});
+
+window.addEventListener("keyup", e=>{
+    keys[e.key.toLowerCase()] = false;
+});
+
+/* =====================================================
+WORLD SETTINGS
+===================================================== */
+
+const world = {
+    gravity: 0.7,
+    baseGround: () => canvas.height * 0.75
+};
+
+/* =====================================================
+PLAYER
+===================================================== */
+
 const player = {
-    x: 200,
-    y: 200,
-    width: 50,
-    height: 80,
+    x: 400,
+    y: 0,
     vx: 0,
     vy: 0,
-    speed: 5,
-    jump: 14,
+
+    width: 90,
+    height: 220,
+
+    accel: 1.4,
+    maxSpeed: 12,
+    friction: 0.85,
+    jumpForce: 18,
     onGround: false
 };
 
-/* =============================
-   LOAD YOUR STICKMAN IMAGE
-   (Put your image in same folder or change path)
-============================= */
-const stickImg = new Image();
-stickImg.src = "stickman.png"; // <-- change if needed
+/* =====================================================
+CAMERA
+===================================================== */
 
-/* =============================
-   KEY SYSTEM (WASD)
-============================= */
-const keys = { w:false, a:false, s:false, d:false };
+const camera = {
+    x: 0,
+    smooth: 0.08
+};
 
-window.addEventListener("keydown", e => {
-    const k = e.key.toLowerCase();
-    if (k in keys) {
-        keys[k] = true;
-        e.preventDefault();
-    }
-});
+/* =====================================================
+WORLD OBJECTS
+===================================================== */
 
-window.addEventListener("keyup", e => {
-    const k = e.key.toLowerCase();
-    if (k in keys) {
-        keys[k] = false;
-        e.preventDefault();
-    }
-});
+const trees = [];
+const rocks = [];
+const rivers = [];
+const bridges = [];
 
-/* =============================
-   WORLD / GROUND
-============================= */
-const gravity = 0.7;
-const groundHeight = 120;
+/* ----- TREES ----- */
 
-/* =============================
-   UPDATE
-============================= */
-function update() {
+let treeX = 0;
+for(let i=0;i<160;i++){
+    treeX += 120 + Math.random()*280;
+    trees.push({
+        x: treeX,
+        size: 0.6 + Math.random()*1.5
+    });
+}
 
-    /* Horizontal movement */
-    if (keys.a) player.vx = -player.speed;
-    else if (keys.d) player.vx = player.speed;
-    else player.vx = 0;
+/* ----- ROCKS ----- */
 
-    /* Jump */
-    if (keys.w && player.onGround) {
-        player.vy = -player.jump;
+for(let i=0;i<60;i++){
+    rocks.push({
+        x: i*700 + 300 + Math.random()*300,
+        size: 25 + Math.random()*45
+    });
+}
+
+/* ----- RIVERS + BRIDGES ----- */
+
+for(let i=0;i<15;i++){
+    let rx = i*1800 + 900;
+
+    rivers.push({
+        x: rx,
+        width: 250 + Math.random()*250
+    });
+
+    bridges.push({
+        x: rx + 60,
+        width: 160
+    });
+}
+
+/* =====================================================
+GROUND HEIGHT FUNCTION
+===================================================== */
+
+function groundHeightAt(x){
+
+    let base = world.baseGround();
+
+    base -= Math.sin(x * 0.002) * 45;
+    base -= Math.sin(x * 0.0007) * 65;
+
+    rivers.forEach(r=>{
+        if(x > r.x && x < r.x + r.width){
+            base += 60;
+        }
+    });
+
+    return base;
+}
+
+/* =====================================================
+PHYSICS UPDATE
+===================================================== */
+
+function update(){
+
+    /* MOVEMENT INPUT */
+    if(keys["a"]) player.vx -= player.accel;
+    if(keys["d"]) player.vx += player.accel;
+
+    if((keys["w"] || keys[" "]) && player.onGround){
+        player.vy = -player.jumpForce;
         player.onGround = false;
     }
 
-    /* Gravity */
-    player.vy += gravity;
+    /* SPEED LIMIT */
+    player.vx = Math.max(-player.maxSpeed, Math.min(player.maxSpeed, player.vx));
 
-    /* Apply movement */
+    /* FRICTION */
+    player.vx *= player.friction;
+
+    /* GRAVITY */
+    player.vy += world.gravity;
+
+    /* APPLY MOVEMENT */
     player.x += player.vx;
     player.y += player.vy;
 
-    /* Ground collision */
-    const groundY = canvas.height - groundHeight;
+    /* GROUND COLLISION */
+    let ground = groundHeightAt(player.x);
 
-    if (player.y + player.height > groundY) {
-        player.y = groundY - player.height;
+    if(player.y + player.height > ground){
+        player.y = ground - player.height;
         player.vy = 0;
         player.onGround = true;
     }
 
-    /* Keep on screen horizontally */
-    if (player.x < 0) player.x = 0;
-    if (player.x + player.width > canvas.width)
-        player.x = canvas.width - player.width;
+    /* ROCK COLLISION */
+    rocks.forEach(r=>{
+        if(Math.abs(player.x - r.x) < 45){
+            let rockTop = groundHeightAt(r.x) - r.size;
+            if(player.y + player.height > rockTop &&
+               player.y + player.height < rockTop + 40){
+                player.y = rockTop - player.height;
+                player.vy = 0;
+                player.onGround = true;
+            }
+        }
+    });
+
+    /* CAMERA FOLLOW */
+    let target = player.x - canvas.width * 0.4;
+    camera.x += (target - camera.x) * camera.smooth;
 }
 
-/* =============================
-   DRAW WORLD
-============================= */
-function drawBackground() {
+/* =====================================================
+DRAW SKY + PARALLAX
+===================================================== */
 
-    /* Sky */
-    ctx.fillStyle = "#87CEEB";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+function drawSky(){
 
-    /* Simple mountains */
-    ctx.fillStyle = "#6b7a8f";
-    for (let i = 0; i < canvas.width; i += 300) {
+    ctx.fillStyle = "#87c9ff";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    /* FAR MOUNTAINS */
+    ctx.fillStyle = "#6e8fb3";
+
+    for(let i=-2;i<10;i++){
+        let x = i*400 - (camera.x*0.2)%400;
+
         ctx.beginPath();
-        ctx.moveTo(i, canvas.height - groundHeight);
-        ctx.lineTo(i + 150, canvas.height - groundHeight - 200);
-        ctx.lineTo(i + 300, canvas.height - groundHeight);
+        ctx.moveTo(x, canvas.height*0.6);
+        ctx.lineTo(x+200, canvas.height*0.4);
+        ctx.lineTo(x+400, canvas.height*0.6);
         ctx.fill();
     }
 
-    /* Ground */
-    ctx.fillStyle = "#2e7d32";
-    ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
+    /* NEAR HILLS */
+    ctx.fillStyle = "#5f9c6b";
+
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height*0.7);
+
+    for(let x=0;x<canvas.width;x+=20){
+        let wx = x + camera.x*0.5;
+        let y = canvas.height*0.7 + Math.sin(wx*0.002)*40;
+        ctx.lineTo(x,y);
+    }
+
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.fill();
 }
 
-/* =============================
-   DRAW PLAYER
-============================= */
-function drawPlayer() {
+/* =====================================================
+DRAW GROUND
+===================================================== */
 
-    if (stickImg.complete) {
+function drawGround(){
+
+    ctx.fillStyle = "#4caf50";
+
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height);
+
+    for(let x=0;x<canvas.width;x+=10){
+        let wx = x + camera.x;
+        let y = groundHeightAt(wx);
+        ctx.lineTo(x,y);
+    }
+
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+}
+
+/* =====================================================
+DRAW RIVERS
+===================================================== */
+
+function drawRivers(){
+
+    rivers.forEach(r=>{
+        let x = r.x - camera.x;
+
+        ctx.fillStyle = "#4fc3f7";
+        ctx.fillRect(x, groundHeightAt(r.x)-20, r.width, 60);
+    });
+}
+
+/* =====================================================
+DRAW BRIDGES
+===================================================== */
+
+function drawBridges(){
+
+    bridges.forEach(b=>{
+        let x = b.x - camera.x;
+        let y = groundHeightAt(b.x) - 30;
+
+        ctx.fillStyle = "#8d6e63";
+        ctx.fillRect(x, y, b.width, 20);
+    });
+}
+
+/* =====================================================
+DRAW TREES
+===================================================== */
+
+function drawTrees(){
+
+    trees.forEach(t=>{
+        let x = t.x - camera.x;
+        if(x < -200 || x > canvas.width+200) return;
+
+        let ground = groundHeightAt(t.x);
+        let h = 120 * t.size;
+
+        ctx.fillStyle = "#6b3f1d";
+        ctx.fillRect(x, ground-h, 20*t.size, h);
+
+        ctx.fillStyle = "#2e7d32";
+        ctx.beginPath();
+        ctx.arc(x+10*t.size, ground-h, 50*t.size, 0, Math.PI*2);
+        ctx.fill();
+    });
+}
+
+/* =====================================================
+DRAW ROCKS
+===================================================== */
+
+function drawRocks(){
+
+    ctx.fillStyle = "#777";
+
+    rocks.forEach(r=>{
+        let x = r.x - camera.x;
+        let y = groundHeightAt(r.x) - r.size;
+
+        ctx.beginPath();
+        ctx.arc(x, y, r.size, 0, Math.PI*2);
+        ctx.fill();
+    });
+}
+
+/* =====================================================
+DRAW PLAYER
+===================================================== */
+
+function drawPlayer(){
+
+    let screenX = player.x - camera.x;
+
+    if(imageReady){
         ctx.drawImage(
             stickImg,
-            player.x,
+            screenX - player.width/2,
             player.y,
             player.width,
             player.height
         );
-    } else {
-        /* fallback rectangle if image not loaded */
-        ctx.fillStyle = "red";
-        ctx.fillRect(player.x, player.y, player.width, player.height);
+    }else{
+        /* FALLBACK IF IMAGE NOT LOADED */
+        ctx.fillStyle = "black";
+        ctx.fillRect(screenX-20, player.y, 40, player.height);
     }
 }
 
-/* =============================
-   MAIN DRAW
-============================= */
-function draw() {
-    drawBackground();
-    drawPlayer();
-}
+/* =====================================================
+MAIN LOOP
+===================================================== */
 
-/* =============================
-   GAME LOOP
-============================= */
-function gameLoop() {
+let lastTime = performance.now();
+
+function loop(now){
+
     update();
-    draw();
-    requestAnimationFrame(gameLoop);
+
+    drawSky();
+    drawRivers();
+    drawGround();
+    drawBridges();
+    drawTrees();
+    drawRocks();
+    drawPlayer();
+
+    requestAnimationFrame(loop);
 }
 
-requestAnimationFrame(gameLoop);
+/* =====================================================
+START GAME
+===================================================== */
 
-/* =============================
-   FIX TAB → BLUE SCREEN BUG
-============================= */
-document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
-        canvas.focus();
-        requestAnimationFrame(gameLoop);
-    }
-});
+player.y = groundHeightAt(player.x) - player.height;
+camera.x = player.x - canvas.width * 0.4;
+
+requestAnimationFrame(loop);
 
 </script>
+</body>
+</html>
